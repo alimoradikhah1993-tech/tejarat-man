@@ -7,4 +7,4 @@ CHAT_ID = os.environ.get("CHAT_ID")
 bot = Bot(token=TOKEN)
 
 def send_report(text):
-    send_report(text)
+    bot.send_message(chat_id=CHAT_ID, text=text)
