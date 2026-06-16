@@ -23,7 +23,7 @@ def job():
         send_report(message)
 
     except Exception as e:
-        send_report(f"❌ خطا در تحلیل: {str(e)}")
+        send_report(f"❌ خطا: {str(e)}")
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(job, 'interval', minutes=15)
@@ -33,6 +33,6 @@ def home():
     return "Bot is running"
 
 if __name__ == "__main__":
-    scheduler.start()   # 🔥 اینجا مهمه
-    job()               # 🔥 تست فوری بعد از استارت
+    scheduler.start()
+    job()
     app.run(host="0.0.0.0", port=10000)
