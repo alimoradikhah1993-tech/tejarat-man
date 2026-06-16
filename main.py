@@ -4,31 +4,35 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from news import get_trade_news
 from analyzer import analyze_news
 from bot import send_report
-send_report("🟢 تست موفق: ربات به تلگرام وصل شد")
+
 app = Flask(__name__)
 
 def job():
-    news = get_trade_news()
-    insights, opportunities = analyze_news(news)
+    try:
+        news = get_trade_news()
+        insights, opportunities = analyze_news(news)
 
-    message = "📊 تحلیل تجارت روسیه و آذربایجان\n\n"
+        message = "📊 تحلیل تجارت روسیه و آذربایجان\n\n"
 
-    message += "🧠 اخبار مهم:\n"
-    message += "\n".join(insights[:10])
+        message += "🧠 اخبار مهم:\n"
+        message += "\n".join(insights[:10])
 
-    message += "\n\n🇮🇷 فرصت‌های صادرات ایران:\n"
-    message += "\n".join(opportunities[:10])
+        message += "\n\n🇮🇷 فرصت‌های صادرات ایران:\n"
+        message += "\n".join(opportunities[:10])
 
-    send_report(message)
+        send_report(message)
+
+    except Exception as e:
+        send_report(f"❌ خطا در تحلیل: {str(e)}")
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(job, 'interval', minutes=15)
-scheduler.start()
 
 @app.route("/")
 def home():
     return "Bot is running"
 
 if __name__ == "__main__":
+    scheduler.start()   # 🔥 اینجا مهمه
+    job()               # 🔥 تست فوری بعد از استارت
     app.run(host="0.0.0.0", port=10000)
-    send_report("🟢 تست ربات موفق بود")
