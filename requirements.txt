@@ -1,5 +1,5 @@
 flask
-apscheduler
+apscheduler==3.6.3
 feedparser
 requests
 setuptools
