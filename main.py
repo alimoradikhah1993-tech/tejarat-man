@@ -4,7 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from news import get_trade_news
 from analyzer import analyze_news
 from bot import send_report
-
+send_report("🟢 تست موفق: ربات به تلگرام وصل شد")
 app = Flask(__name__)
 
 def job():
