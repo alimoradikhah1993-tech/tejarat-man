@@ -3,8 +3,4 @@ apscheduler
 feedparser
 requests
 python-telegram-bot==20.7
-setuptoolsflask
-feedparser
-requests
 setuptools
-python-telegram-bot==13.15
