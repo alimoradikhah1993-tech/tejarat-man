@@ -1,5 +1,4 @@
 import os
-import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -13,58 +12,45 @@ if not TOKEN:
 if not APP_URL:
     raise ValueError("APP_URL is not set")
 
-# ---------------- FLASK APP ----------------
+# ---------------- APP ----------------
 app = Flask(__name__)
 
-# ---------------- TELEGRAM BOT ----------------
 application = Application.builder().token(TOKEN).build()
-
 
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 ربات فعال است (Webhook Mode)")
-
+    await update.message.reply_text("🤖 ربات فعال است")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🟢 ربات آنلاین است")
-
+    await update.message.reply_text("🟢 آنلاین")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"📩 پیام شما: {update.message.text}")
-
+    await update.message.reply_text(update.message.text)
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("status", status))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-
-# ---------------- WEB ROUTES ----------------
+# ---------------- FLASK ROUTE ----------------
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running"
+
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-
-    update = Update.de_json(data, application.bot)
-
-    application.process_update(update)
-
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
     return "ok"
 
-# ---------------- SET WEBHOOK ----------------
-def set_webhook():
+# ---------------- STARTUP ----------------
+def start_bot():
+    application.initialize()
+
     url = f"{APP_URL}/{TOKEN}"
     application.bot.set_webhook(url=url)
     print("Webhook set:", url)
 
-# ---------------- RUN SERVER ----------------
-def run():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    loop.run_until_complete(application.initialize())
-
-    set_webhook()
-
+# ---------------- RUN ----------------
+if __name__ == "__main__":
+    start_bot()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
