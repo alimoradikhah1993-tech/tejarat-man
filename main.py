@@ -1,74 +1,60 @@
 import os
-import asyncio
-import requests
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
+APP_URL = os.getenv("APP_URL")  # مثلا https://your-app.onrender.com
+
+app = Flask(__name__)
+
+# ---------------- BOT ----------------
+application = Application.builder().token(TOKEN).build()
 
 
-# ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 ربات فعال است\n\n"
-        "دستور:\n/search product country\nمثال:\n/search milk Russia"
-    )
+    await update.message.reply_text("🤖 ربات فعال است (Webhook Mode)")
 
 
-# ---------------- STATUS ----------------
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🟢 ربات آنلاین است")
+    await update.message.reply_text("🟢 آنلاین هستم")
 
 
-# ---------------- SIMPLE SEARCH (GOOGLE SIMULATION) ----------------
-def simple_search(query: str):
-    # فعلاً نسخه ساده بدون API پولی
-    url = f"https://www.google.com/search?q={query}"
-    return url
-
-
-# ---------------- MESSAGE HANDLER ----------------
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-
-    if text.startswith("/search"):
-        try:
-            parts = text.split(" ", 2)
-            product = parts[1]
-            country = parts[2]
-
-            query = f"{product} import export companies {country}"
-            result = simple_search(query)
-
-            await update.message.reply_text(
-                f"🔍 نتیجه جستجو:\n\n{result}\n\n"
-                f"📦 محصول: {product}\n🌍 کشور: {country}"
-            )
-
-        except Exception as e:
-            await update.message.reply_text(f"❌ خطا در دستور سرچ\n{str(e)}")
-
-    else:
-        await update.message.reply_text("⚠️ دستور ناشناخته\nاز /search استفاده کن")
+    await update.message.reply_text(f"📩 دریافت شد: {text}")
 
 
-# ---------------- RUN BOT ----------------
-async def run():
-    if not TOKEN:
-        print("BOT_TOKEN missing")
-        return
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("status", status))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+# ---------------- WEBHOOK ROUTE ----------------
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running"
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await asyncio.Event().wait()
+
+@app.route(f"/{TOKEN}", methods=["POST"])
+async def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    await application.process_update(update)
+    return "ok"
+
+
+# ---------------- START WEBHOOK ----------------
+def set_webhook():
+    url = f"{APP_URL}/{TOKEN}"
+    application.bot.set_webhook(url=url)
+    print("Webhook set:", url)
+
+
+def run():
+    application.initialize()
+    set_webhook()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    run()
