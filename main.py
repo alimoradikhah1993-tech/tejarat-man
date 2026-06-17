@@ -39,6 +39,9 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
 
 # ---------------- WEB ROUTES ----------------
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running"
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
@@ -66,9 +69,11 @@ def set_webhook():
 
 # ---------------- RUN SERVER ----------------
 def run():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    loop.run_until_complete(application.initialize())
+
     set_webhook()
+
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-
-if __name__ == "__main__":
-    run()
