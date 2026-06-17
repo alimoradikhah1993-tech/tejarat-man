@@ -9,7 +9,7 @@ if not TOKEN:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 ربات روشن شد")
+    await update.message.reply_text("🤖 ربات فعال شد")
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
