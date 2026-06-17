@@ -48,23 +48,14 @@ def webhook():
 
     update = Update.de_json(data, application.bot)
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    loop.run_until_complete(application.process_update(update))
+    application.process_update(update)
 
     return "ok"
-
 
 # ---------------- SET WEBHOOK ----------------
 def set_webhook():
     url = f"{APP_URL}/{TOKEN}"
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    loop.run_until_complete(application.bot.set_webhook(url=url))
-
+    application.bot.set_webhook(url=url)
     print("Webhook set:", url)
 
 # ---------------- RUN SERVER ----------------
