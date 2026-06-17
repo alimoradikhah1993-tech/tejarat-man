@@ -1,17 +1,21 @@
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
+# ---------------- ENV ----------------
 TOKEN = os.getenv("BOT_TOKEN")
-APP_URL = os.getenv("APP_URL")  # مثلا https://your-app.onrender.com
+APP_URL = os.getenv("APP_URL")  # https://your-app.onrender.com
 
+# ---------------- FLASK ----------------
 app = Flask(__name__)
 
 # ---------------- BOT ----------------
 application = Application.builder().token(TOKEN).build()
 
 
+# ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 ربات فعال است (Webhook Mode)")
 
@@ -30,28 +34,37 @@ application.add_handler(CommandHandler("status", status))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 
-# ---------------- WEBHOOK ROUTE ----------------
+# ---------------- ROUTES ----------------
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running"
 
 
 @app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
+def webhook():
+    data = request.get_json(force=True)
+
+    update = Update.de_json(data, application.bot)
+
+    # اجرای async در Flask
+    asyncio.run(application.process_update(update))
+
     return "ok"
 
 
-# ---------------- START WEBHOOK ----------------
+# ---------------- WEBHOOK SET ----------------
 def set_webhook():
     url = f"{APP_URL}/{TOKEN}"
-    application.bot.set_webhook(url=url)
-    print("Webhook set:", url)
+    asyncio.run(application.bot.set_webhook(url=url))
+    print("✅ Webhook set:", url)
 
 
+# ---------------- RUN ----------------
 def run():
-    application.initialize()
+    if not TOKEN or not APP_URL:
+        print("❌ BOT_TOKEN یا APP_URL تنظیم نشده")
+        return
+
     set_webhook()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
