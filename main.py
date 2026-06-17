@@ -1,38 +1,53 @@
 import os
+import requests
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = os.getenv("BOT_TOKEN")
+# گرفتن توکن‌ها از Render
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
-if not TOKEN:
-    raise RuntimeError("BOT_TOKEN is missing")
+
+def search_companies(query):
+    q = f"{query} Russia concrete company factory"
+
+    url = "https://serpapi.com/search.json"
+    params = {
+        "q": q,
+        "engine": "google",
+        "api_key": SERPAPI_KEY,
+        "gl": "ru",
+        "hl": "en"
+    }
+
+    data = requests.get(url, params=params).json()
+
+    results = []
+
+    for item in data.get("organic_results", [])[:7]:
+        title = item.get("title", "")
+        results.append(f"🏢 {title}")
+
+    return "\n".join(results)
 
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 ربات روشن شد و آماده است")
+    await update.message.reply_text("سلام 👋\nکلمه رو بفرست (مثلاً: روان کننده بتن)")
 
 
-# echo
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.text:
-        await update.message.reply_text(update.message.text)
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.message.text
+
+    await update.message.reply_text("🔍 در حال جستجو...")
+
+    result = search_companies(query)
+
+    await update.message.reply_text(result if result else "چیزی پیدا نشد")
 
 
-def main():
-    app = Application.builder().token(TOKEN).build()
+app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-    print("Bot is running...")
-
-    # IMPORTANT for Render
-    app.run_polling(
-        drop_pending_updates=True,
-        close_loop=False
-    )
-
-
-if __name__ == "__main__":
-    main()
+app.run_polling()
