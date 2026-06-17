@@ -12,26 +12,27 @@ if not TOKEN:
 if not APP_URL:
     raise ValueError("APP_URL is not set")
 
-# ---------------- APP ----------------
+# ---------------- FLASK ----------------
 app = Flask(__name__)
 
+# ---------------- TELEGRAM ----------------
 application = Application.builder().token(TOKEN).build()
 
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 ربات فعال است")
+    await update.message.reply_text("🤖 ربات فعال شد و آماده است!")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🟢 آنلاین")
+    await update.message.reply_text("🟢 ربات آنلاین است")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(update.message.text)
+    await update.message.reply_text(f"📩 پیام شما: {update.message.text}")
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("status", status))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# ---------------- FLASK ROUTE ----------------
+# ---------------- WEB ROUTES ----------------
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running"
@@ -39,18 +40,16 @@ def home():
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
+    application.process_update(update)
     return "ok"
 
-# ---------------- STARTUP ----------------
-def start_bot():
-    application.initialize()
-
+# ---------------- SET WEBHOOK ----------------
+def set_webhook():
     url = f"{APP_URL}/{TOKEN}"
     application.bot.set_webhook(url=url)
     print("Webhook set:", url)
 
-# ---------------- RUN ----------------
+# ---------------- STARTUP ----------------
 if __name__ == "__main__":
-    start_bot()
+    set_webhook()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
