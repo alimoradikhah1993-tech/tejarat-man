@@ -1,27 +1,30 @@
 import os
 import asyncio
-import logging
+import threading
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from scraper import search_msp
 
-# فعال کردن لاگ برای عیب‌یابی
-logging.basicConfig(level=logging.INFO)
+app = Flask(__name__)
 
-# توکن ربات را از متغیر محیطی می‌خوانیم
+@app.route('/')
+def home():
+    return "ربات تلگرام فعال است!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN environment variable not set!")
 
-# دستور /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 سلام! من ربات جستجوی شرکت‌های روسی هستم.\n"
-        "نام کالا را به فارسی یا انگلیسی بفرستید تا شرکت‌های مرتبط را پیدا کنم.\n"
-        "مثال: یخچال  یا  Refrigerator"
+        "نام کالا را به فارسی یا انگلیسی بفرستید تا شرکت‌های مرتبط را پیدا کنم."
     )
 
-# پردازش پیام‌های معمولی (جستجو)
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyword = update.message.text.strip()
     if not keyword:
@@ -31,30 +34,26 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 در حال جستجوی شرکت‌های مرتبط با «{keyword}» ...")
     
     try:
-        # اجرای اسکرپر
         companies = await search_msp(keyword)
-        
         if not companies:
-            await update.message.reply_text("😕 نتیجه‌ای پیدا نشد. لطفاً کلمه دیگری试试 کنید.")
+            await update.message.reply_text("😕 نتیجه‌ای پیدا نشد.")
         else:
-            # لیست شرکت‌ها را به صورت شماره‌دار نمایش می‌دهیم
             result = "📋 شرکت‌های پیدا شده:\n\n" + "\n".join([f"{i+1}. {c}" for i, c in enumerate(companies[:20])])
             if len(companies) > 20:
                 result += f"\n\n... و {len(companies)-20} شرکت دیگر"
             await update.message.reply_text(result)
-            
     except Exception as e:
-        await update.message.reply_text(f"❌ خطا در جستجو: {str(e)}")
+        await update.message.reply_text(f"❌ خطا: {str(e)}")
 
-# تابع اصلی
-def main():
-    app = Application.builder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
-    
+def run_telegram():
+    telegram_app = Application.builder().token(TOKEN).build()
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
     print("🤖 ربات روشن شد...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    main()
+    # اجرای همزمان فلاسک و ربات تلگرام
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+    run_telegram()
