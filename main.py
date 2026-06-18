@@ -3,7 +3,7 @@ import asyncio
 import re
 import pandas as pd
 from datetime import datetime
-from flask import Flask, request
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from selenium import webdriver
@@ -15,19 +15,13 @@ from deep_translator import GoogleTranslator
 import logging
 import threading
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 
 # ==================== تنظیمات ====================
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set!")
 
-# آدرس وب‌سایت رندر (حتماً در Render تنظیم کنید)
-WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL")
-if not WEBHOOK_URL:
-    print("⚠️ RENDER_EXTERNAL_URL تنظیم نشده! Webhook کار نخواهد کرد.")
-
-# ==================== اپلیکیشن فلاسک ====================
 app = Flask(__name__)
 
 # منابع گمرکات روسیه
@@ -39,28 +33,11 @@ CUSTOMS_SOURCES = {
         "https://www.russiancustoms.ru",
         "https://customs.gov.ru/statistic",
     ],
-    "telegram_channels": [
-        "@customs_russia",
-        "@customs_rf",
-        "@import_russia",
-        "@export_russia",
-        "@rostamozhenie",
-        "@customs_official",
-        "@rus_customs",
-        "@gumrf",
-        "@federal_customs",
-        "@customs_news",
-        "@torgi_gov",
-        "@zakupki_gov",
-        "@goszakupki",
-        "@promportal",
-        "@metaprom",
-    ]
+    "telegram_channels": []
 }
 
 # ==================== ابزارها ====================
 async def extract_phone_email(text: str) -> tuple:
-    """استخراج شماره و ایمیل از متن با الگوهای روسی"""
     phone_patterns = [
         r'\+7\s*\(?\d{3}\)?\s*\d{3}[\s-]?\d{2}[\s-]?\d{2}',
         r'8\s*\(?\d{3}\)?\s*\d{3}[\s-]?\d{2}[\s-]?\d{2}',
@@ -83,7 +60,6 @@ async def extract_phone_email(text: str) -> tuple:
     return phone, email
 
 async def translate_to_russian(text: str) -> str:
-    """ترجمه به روسی با deep-translator"""
     try:
         result = GoogleTranslator(source='auto', target='ru').translate(text)
         return result
@@ -91,9 +67,7 @@ async def translate_to_russian(text: str) -> str:
         logging.warning(f"Translation failed: {e}")
         return text
 
-# ==================== جستجوگر وب ====================
 async def search_website_with_selenium(url: str, keyword: str) -> list:
-    """جستجو در وب‌سایت با Selenium"""
     companies = []
     options = Options()
     options.add_argument("--headless")
@@ -101,9 +75,6 @@ async def search_website_with_selenium(url: str, keyword: str) -> list:
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920x1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
     
     try:
         driver = webdriver.Chrome(options=options)
@@ -114,38 +85,22 @@ async def search_website_with_selenium(url: str, keyword: str) -> list:
         else:
             search_url = f"{url}/search/?q={keyword}"
         
-        logging.info(f"🔍 Searching: {search_url}")
         driver.get(search_url)
         await asyncio.sleep(5)
         
         selectors = [
-            ".company-item",
-            ".catalog-item",
-            ".company-card",
-            ".supplier-item",
-            ".importer-item",
-            ".org-item",
-            ".entry-item",
-            ".item",
-            ".result-item",
-            ".company",
-            ".supplier",
-            ".organization",
-            "div[class*='company']",
-            "div[class*='supplier']",
-            "div[class*='org']",
-            "a[href*='/company/']",
-            "a[href*='/supplier/']",
+            ".company-item", ".catalog-item", ".company-card", 
+            ".supplier-item", ".importer-item", ".org-item",
+            ".company", ".supplier", "div[class*='company']",
+            "a[href*='/company/']", "a[href*='/supplier/']"
         ]
         
-        found = False
         for selector in selectors:
             try:
                 elements = WebDriverWait(driver, 5).until(
                     EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
                 )
                 if elements:
-                    found = True
                     for elem in elements[:20]:
                         text = elem.text
                         if not text or len(text) < 5:
@@ -156,7 +111,7 @@ async def search_website_with_selenium(url: str, keyword: str) -> list:
                         
                         if len(name) < 3 or len(name) > 100:
                             try:
-                                title_elem = elem.find_element(By.CSS_SELECTOR, ".title, .name, h3, h4, .heading")
+                                title_elem = elem.find_element(By.CSS_SELECTOR, ".title, .name, h3, h4")
                                 name = title_elem.text.strip()
                             except:
                                 name = text[:50].strip()
@@ -171,80 +126,30 @@ async def search_website_with_selenium(url: str, keyword: str) -> list:
                                     "source": url
                                 })
                     break
-            except Exception as e:
-                logging.debug(f"Selector {selector} failed: {e}")
+            except:
                 continue
         
-        if not found:
-            logging.info(f"No companies found with selectors, scanning full page for {url}")
-            page_text = driver.page_source
-            phone, email = await extract_phone_email(page_text)
-            if phone and email:
-                try:
-                    title = driver.find_element(By.TAG_NAME, "title").text
-                    if title and len(title) > 3:
-                        companies.append({
-                            "name": title[:50],
-                            "phone": phone,
-                            "email": email,
-                            "source": url
-                        })
-                except:
-                    pass
-        
         driver.quit()
-        
     except Exception as e:
         logging.error(f"Error in {url}: {e}")
     
     return companies
 
-# ==================== جستجوگر تلگرام ====================
-async def search_telegram_channel(channel: str, keyword: str) -> list:
-    """جستجو در کانال‌های تلگرام (Mock)"""
-    return []
-
-# ==================== جستجوی اصلی ====================
 async def search_all_sources(keyword: str, status_message) -> list:
-    """جستجو در همه منابع و جمع‌آوری اطلاعات"""
     all_companies = []
-    
-    # ترجمه به روسی
     russian_keyword = await translate_to_russian(keyword)
     logging.info(f"🔑 جستجو برای: {keyword} → روسی: {russian_keyword}")
     
-    total_sources = len(CUSTOMS_SOURCES["websites"]) + len(CUSTOMS_SOURCES["telegram_channels"])
-    current = 0
-    
-    # 1. جستجو در وب‌سایت‌های گمرک
     for site in CUSTOMS_SOURCES["websites"]:
-        current += 1
         await status_message.edit_text(
-            f"🔍 در حال جستجوی شرکت‌های واردکننده «{keyword}» ...\n"
-            f"⏳ لطفاً منتظر بمانید...\n\n"
-            f"📌 در حال بررسی: {site}\n"
-            f"📊 پیشرفت: {current}/{total_sources}"
+            f"🔍 در حال جستجوی «{keyword}» ...\n"
+            f"⏳ در حال بررسی: {site}\n"
+            f"⏱ لطفاً منتظر بمانید..."
         )
-        
         companies = await search_website_with_selenium(site, russian_keyword)
         all_companies.extend(companies)
         await asyncio.sleep(2)
     
-    # 2. جستجو در کانال‌های تلگرام
-    for channel in CUSTOMS_SOURCES["telegram_channels"]:
-        current += 1
-        await status_message.edit_text(
-            f"🔍 در حال جستجوی شرکت‌های واردکننده «{keyword}» ...\n"
-            f"⏳ لطفاً منتظر بمانید...\n\n"
-            f"📌 در حال بررسی: {channel}\n"
-            f"📊 پیشرفت: {current}/{total_sources}"
-        )
-        
-        companies = await search_telegram_channel(channel, russian_keyword)
-        all_companies.extend(companies)
-        await asyncio.sleep(1)
-    
-    # حذف تکراری‌ها
     seen = set()
     unique_companies = []
     for company in all_companies:
@@ -253,18 +158,16 @@ async def search_all_sources(keyword: str, status_message) -> list:
             seen.add(key)
             unique_companies.append(company)
     
-    logging.info(f"✅ Found {len(unique_companies)} unique companies")
     return unique_companies
 
-# ==================== ربات تلگرام ====================
+# ==================== هندلرهای ربات ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 سلام! من ربات جستجوی شرکت‌های واردکننده به روسیه هستم.\n\n"
-        "📌 هر کلمه (فارسی یا انگلیسی) بفرستید تا در گمرکات روسیه جستجو کنم.\n"
+        "📌 هر کلمه (فارسی یا انگلیسی) بفرستید تا جستجو کنم.\n"
         "✅ نتیجه شامل شرکت‌های دارای شماره و ایمیل می‌شود.\n"
         "📊 خروجی به صورت فایل اکسل ارسال می‌شود.\n\n"
-        "🔍 مثال: 'سیمان' یا 'cement' یا 'fish'\n\n"
-        "⏳ زمان جستجو حدود ۱-۲ دقیقه است."
+        "🔍 مثال: 'سیمان' یا 'cement' یا 'fish'"
     )
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -274,7 +177,6 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ حداقل ۲ کاراکتر وارد کنید.")
         return
     
-    # پیام اولیه با درخواست منتظر ماندن
     msg = await update.message.reply_text(
         f"🔍 در حال جستجوی شرکت‌های واردکننده «{keyword}» ...\n"
         f"⏳ صادرکننده گرامی، لطفاً منتظر بمانید...\n\n"
@@ -286,24 +188,16 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not companies:
             await msg.edit_text(
-                f"😕 هیچ شرکتی با شماره و ایمیل برای «{keyword}» پیدا نشد.\n\n"
-                f"💡 نکات:\n"
-                f"• از کلمات عمومی‌تر استفاده کنید (مثلاً 'مواد غذایی' به جای 'ماهی قزل‌آلا')\n"
-                f"• کلمه را به انگلیسی یا روسی وارد کنید\n"
-                f"• ممکن است گمرکات اطلاعات شرکت‌ها را به‌روز نکرده باشند"
+                f"😕 هیچ شرکتی با شماره و ایمیل برای «{keyword}» پیدا نشد."
             )
             return
         
-        # ساخت دیتافریم
         df = pd.DataFrame(companies)
-        
-        # ایجاد فایل اکسل
         safe_keyword = re.sub(r'[^\w\s]', '', keyword)
         filename = f"شرکتهای_واردکننده_{safe_keyword}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name="شرکت‌ها")
-            
             worksheet = writer.sheets["شرکت‌ها"]
             for column in worksheet.columns:
                 max_length = 0
@@ -314,22 +208,15 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             max_length = len(str(cell.value))
                     except:
                         pass
-                adjusted_width = min(max_length + 2, 50)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
+                worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
         
-        # ارسال فایل
         with open(filename, 'rb') as f:
             await update.message.reply_document(
                 document=f,
                 filename=filename,
                 caption=f"✅ <b>{len(companies)} شرکت</b> پیدا شد.\n"
                        f"🔑 کلمه جستجو: {keyword}\n"
-                       f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}\n\n"
-                       f"📊 فایل شامل:\n"
-                       f"• نام شرکت\n"
-                       f"• شماره تماس\n"
-                       f"• ایمیل\n"
-                       f"• منبع (وب‌سایت)",
+                       f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}",
                 parse_mode="HTML"
             )
         
@@ -340,23 +227,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ خطا: {str(e)[:200]}")
         logging.error(f"Error in search: {e}")
 
-# ==================== Webhook ====================
-# این متغیر global برای دسترسی به application در Webhook
-application = None
-
-@app.route(f'/{TOKEN}', methods=['POST'])
-async def webhook():
-    """دریافت درخواست‌های تلگرام"""
-    if request.method == 'POST':
-        try:
-            update = Update.de_json(request.get_json(force=True), application.bot)
-            await application.process_update(update)
-            return "ok", 200
-        except Exception as e:
-            logging.error(f"Webhook error: {e}")
-            return "error", 500
-    return "ok", 200
-
+# ==================== Flask Routes ====================
 @app.route('/')
 def home():
     return "✅ ربات جستجوی شرکت‌های واردکننده به روسیه فعال است!"
@@ -365,40 +236,27 @@ def home():
 def health():
     return "OK", 200
 
-# ==================== اجرای اصلی ====================
+# ==================== اجرا ====================
 def run_bot():
-    """راه‌اندازی ربات با Webhook"""
-    global application
-    
-    # ساخت اپلیکیشن
+    """راه‌اندازی ربات با Polling"""
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
-    
-    # تنظیم Webhook
-    if WEBHOOK_URL:
-        webhook_url = f"{WEBHOOK_URL}/{TOKEN}"
-        application.bot.set_webhook(url=webhook_url)
-        print(f"✅ Webhook تنظیم شد: {webhook_url}")
-    else:
-        print("⚠️ RENDER_EXTERNAL_URL تنظیم نشده! از Polling استفاده می‌شود.")
-        # اگر Webhook تنظیم نشد، از Polling استفاده کن
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-        return
     
     print("=" * 50)
     print("🤖 ربات جستجوی شرکت‌های واردکننده به روسیه")
     print("=" * 50)
     print(f"🌐 {len(CUSTOMS_SOURCES['websites'])} وب‌سایت گمرک")
-    print(f"📱 {len(CUSTOMS_SOURCES['telegram_channels'])} کانال تلگرام")
     print("=" * 50)
-    print("✅ ربات روشن شد!")
+    print("✅ ربات روشن شد! (Polling Mode)")
+    
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # اجرای Webhook در ترد جداگانه
-    bot_thread = threading.Thread(target=run_bot)
+    # اجرای ربات در ترد جداگانه
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    # اجرای فلاسک
+    # اجرای Flask
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
