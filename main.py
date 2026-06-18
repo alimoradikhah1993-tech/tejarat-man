@@ -13,7 +13,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from deep_translator import GoogleTranslator
 import logging
-import threading
 
 logging.basicConfig(level=logging.INFO)
 
@@ -237,8 +236,8 @@ def health():
     return "OK", 200
 
 # ==================== اجرا ====================
-def run_bot():
-    """راه‌اندازی ربات با Polling"""
+if __name__ == "__main__":
+    # ساخت Application
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
@@ -248,15 +247,7 @@ def run_bot():
     print("=" * 50)
     print(f"🌐 {len(CUSTOMS_SOURCES['websites'])} وب‌سایت گمرک")
     print("=" * 50)
-    print("✅ ربات روشن شد! (Polling Mode)")
+    print("✅ ربات در حال اجراست! (بدون ترد)")
     
+    # اجرای ربات در همین ترد اصلی (بدون Flask)
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == "__main__":
-    # اجرای ربات در ترد جداگانه
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # اجرای Flask
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
