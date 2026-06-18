@@ -3,6 +3,7 @@ import asyncio
 import re
 import pandas as pd
 from datetime import datetime
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from selenium import webdriver
@@ -12,6 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from deep_translator import GoogleTranslator
 import logging
+import threading
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -19,6 +21,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set!")
+
+# آدرس وب‌سایت رندر (حتماً در Render تنظیم کنید)
+WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL")
+if not WEBHOOK_URL:
+    print("⚠️ RENDER_EXTERNAL_URL تنظیم نشده! Webhook کار نخواهد کرد.")
+
+# ==================== اپلیکیشن فلاسک ====================
+app = Flask(__name__)
 
 # منابع گمرکات روسیه
 CUSTOMS_SOURCES = {
@@ -330,11 +340,51 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ خطا: {str(e)[:200]}")
         logging.error(f"Error in search: {e}")
 
+# ==================== Webhook ====================
+# این متغیر global برای دسترسی به application در Webhook
+application = None
+
+@app.route(f'/{TOKEN}', methods=['POST'])
+async def webhook():
+    """دریافت درخواست‌های تلگرام"""
+    if request.method == 'POST':
+        try:
+            update = Update.de_json(request.get_json(force=True), application.bot)
+            await application.process_update(update)
+            return "ok", 200
+        except Exception as e:
+            logging.error(f"Webhook error: {e}")
+            return "error", 500
+    return "ok", 200
+
+@app.route('/')
+def home():
+    return "✅ ربات جستجوی شرکت‌های واردکننده به روسیه فعال است!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+# ==================== اجرای اصلی ====================
 def run_bot():
-    """راه‌اندازی ربات"""
+    """راه‌اندازی ربات با Webhook"""
+    global application
+    
+    # ساخت اپلیکیشن
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    
+    # تنظیم Webhook
+    if WEBHOOK_URL:
+        webhook_url = f"{WEBHOOK_URL}/{TOKEN}"
+        application.bot.set_webhook(url=webhook_url)
+        print(f"✅ Webhook تنظیم شد: {webhook_url}")
+    else:
+        print("⚠️ RENDER_EXTERNAL_URL تنظیم نشده! از Polling استفاده می‌شود.")
+        # اگر Webhook تنظیم نشد، از Polling استفاده کن
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        return
     
     print("=" * 50)
     print("🤖 ربات جستجوی شرکت‌های واردکننده به روسیه")
@@ -343,8 +393,12 @@ def run_bot():
     print(f"📱 {len(CUSTOMS_SOURCES['telegram_channels'])} کانال تلگرام")
     print("=" * 50)
     print("✅ ربات روشن شد!")
-    
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    run_bot()
+    # اجرای Webhook در ترد جداگانه
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
+    
+    # اجرای فلاسک
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
