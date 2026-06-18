@@ -10,7 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -73,11 +73,10 @@ async def extract_phone_email(text: str) -> tuple:
     return phone, email
 
 async def translate_to_russian(text: str) -> str:
-    """ترجمه به روسی با fallback"""
+    """ترجمه به روسی با deep-translator"""
     try:
-        translator = Translator()
-        result = translator.translate(text, src='auto', dest='ru')
-        return result.text
+        result = GoogleTranslator(source='auto', target='ru').translate(text)
+        return result
     except Exception as e:
         logging.warning(f"Translation failed: {e}")
         return text
@@ -265,7 +264,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ حداقل ۲ کاراکتر وارد کنید.")
         return
     
-    # ========== پیام اولیه با درخواست منتظر ماندن ==========
+    # پیام اولیه با درخواست منتظر ماندن
     msg = await update.message.reply_text(
         f"🔍 در حال جستجوی شرکت‌های واردکننده «{keyword}» ...\n"
         f"⏳ صادرکننده گرامی، لطفاً منتظر بمانید...\n\n"
