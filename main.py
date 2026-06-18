@@ -3,10 +3,13 @@ import asyncio
 import re
 import pandas as pd
 from datetime import datetime
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
-import traceback
+import threading
+import aiohttp
+from bs4 import BeautifulSoup
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,6 +17,8 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set!")
+
+app = Flask(__name__)
 
 # ==================== منابع ====================
 CUSTOMS_SOURCES = {
@@ -48,7 +53,6 @@ async def extract_phone_email(text: str) -> tuple:
     return phone, email
 
 async def translate_to_russian(text: str) -> str:
-    """ترجمه ساده با دیکشنری (بدون نیاز به کتابخانه)"""
     translation_dict = {
         "سیمان": "цемент",
         "بتن": "бетон",
@@ -68,12 +72,9 @@ async def translate_to_russian(text: str) -> str:
     }
     
     text_lower = text.lower().strip()
-    
-    # چک کردن تطابق کامل
     if text_lower in translation_dict:
         return translation_dict[text_lower]
     
-    # چک کردن کلمات ترکیبی
     words = text_lower.split()
     translated_words = []
     for word in words:
@@ -85,12 +86,8 @@ async def translate_to_russian(text: str) -> str:
     return " ".join(translated_words)
 
 async def search_website_simple(url: str, keyword: str) -> list:
-    """جستجوی ساده بدون Selenium (با استفاده از aiohttp)"""
     companies = []
     try:
-        import aiohttp
-        from bs4 import BeautifulSoup
-        
         async with aiohttp.ClientSession() as session:
             search_url = f"{url}/search/?q={keyword}"
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -100,12 +97,10 @@ async def search_website_simple(url: str, keyword: str) -> list:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
                     
-                    # پیدا کردن متن‌های حاوی شماره و ایمیل
                     for text in soup.stripped_strings:
                         if len(text) > 10:
                             phone, email = await extract_phone_email(text)
                             if phone and email:
-                                # استخراج نام شرکت از متن
                                 name = text[:50].strip()
                                 if len(name) > 3:
                                     companies.append({
@@ -122,7 +117,6 @@ async def search_website_simple(url: str, keyword: str) -> list:
     return companies
 
 async def search_all_sources(keyword: str, status_message) -> list:
-    """جستجو در همه منابع"""
     all_companies = []
     russian_keyword = await translate_to_russian(keyword)
     logging.info(f"🔑 جستجو برای: {keyword} → روسی: {russian_keyword}")
@@ -140,7 +134,6 @@ async def search_all_sources(keyword: str, status_message) -> list:
         except Exception as e:
             logging.error(f"Error searching {site}: {e}")
     
-    # حذف تکراری‌ها
     seen = set()
     unique_companies = []
     for company in all_companies:
@@ -186,7 +179,6 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # ساخت دیتافریم
         df = pd.DataFrame(companies)
         safe_keyword = re.sub(r'[^\w\s]', '', keyword)
         filename = f"شرکتهای_واردکننده_{safe_keyword}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
@@ -211,10 +203,24 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_text = f"❌ خطا: {str(e)[:150]}"
         await msg.edit_text(error_text)
         logging.error(f"Error in search: {e}")
-        logging.error(traceback.format_exc())
+
+# ==================== Flask Routes ====================
+@app.route('/')
+def home():
+    return "✅ ربات جستجوی شرکت‌های واردکننده به روسیه فعال است!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
 
 # ==================== اجرا ====================
-if __name__ == "__main__":
+def run_flask():
+    """اجرای Flask در یک ترد جداگانه"""
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+def run_bot():
+    """راه‌اندازی ربات"""
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
@@ -227,3 +233,11 @@ if __name__ == "__main__":
     print("✅ ربات در حال اجراست!")
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    # اجرای Flask در ترد جداگانه (برای باز کردن پورت)
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # اجرای ربات در ترد اصلی
+    run_bot()
